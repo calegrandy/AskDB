@@ -1,0 +1,1 @@
+REST API which supports the creation of data sources and connections. Its front end consumer will use this information to connect to the data sources and generate custom visualizations.
