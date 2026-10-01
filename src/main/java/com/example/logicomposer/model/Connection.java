@@ -1,14 +1,18 @@
-package com.example.logicomposer.dto;
+package com.example.logicomposer.model;
 
 import com.example.logicomposer.enums.ConnectionType;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
+import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 @Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 @Entity
+@Table(name = "connection")
 public class Connection {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -16,5 +20,6 @@ public class Connection {
     private String username;
     private String password;
     private String url;
+    @Enumerated(EnumType.STRING)
     private ConnectionType type;
 }

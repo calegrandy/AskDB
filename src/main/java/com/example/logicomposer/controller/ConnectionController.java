@@ -1,8 +1,8 @@
 package com.example.logicomposer.controller;
 
-import com.example.logicomposer.dto.Connection;
-import com.example.logicomposer.model.ConnectionResponse;
-import com.example.logicomposer.model.CreateConnectionRequest;
+import com.example.logicomposer.model.Connection;
+import com.example.logicomposer.dto.ConnectionResponse;
+import com.example.logicomposer.dto.CreateConnectionRequest;
 import com.example.logicomposer.service.ConnectionService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;

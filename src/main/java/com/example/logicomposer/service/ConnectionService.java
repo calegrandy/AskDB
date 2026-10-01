@@ -2,8 +2,8 @@ package com.example.logicomposer.service;
 
 import com.example.logicomposer.enums.ConnectionType;
 import com.example.logicomposer.exception.ConnectionNotFoundException;
-import com.example.logicomposer.dto.Connection;
-import com.example.logicomposer.model.CreateConnectionRequest;
+import com.example.logicomposer.model.Connection;
+import com.example.logicomposer.dto.CreateConnectionRequest;
 import com.example.logicomposer.repository.ConnectionRepository;
 import org.springframework.stereotype.Service;
 
