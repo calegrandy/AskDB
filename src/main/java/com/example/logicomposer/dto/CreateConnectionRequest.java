@@ -1,4 +1,4 @@
-package com.example.logicomposer.model;
+package com.example.logicomposer.dto;
 
 import com.example.logicomposer.enums.ConnectionType;
 import jakarta.validation.constraints.NotBlank;

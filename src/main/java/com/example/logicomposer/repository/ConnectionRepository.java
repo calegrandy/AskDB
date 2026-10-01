@@ -1,6 +1,6 @@
 package com.example.logicomposer.repository;
 
-import com.example.logicomposer.dto.Connection;
+import com.example.logicomposer.model.Connection;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 

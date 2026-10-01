@@ -1,3 +1,6 @@
 spring:
   application:
     name: LogiComposer
+  jpa:
+    hibernate:
+      ddl-auto: validate
