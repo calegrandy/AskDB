@@ -3,7 +3,7 @@ package com.example.logicomposer.service;
 import com.example.logicomposer.enums.ConnectionType;
 import com.example.logicomposer.exception.ConnectionNotFoundException;
 import com.example.logicomposer.model.Connection;
-import com.example.logicomposer.dto.CreateConnectionRequest;
+import com.example.logicomposer.dto.ConnectionRequest;
 import com.example.logicomposer.repository.ConnectionRepository;
 import org.springframework.stereotype.Service;
 
@@ -18,7 +18,7 @@ public class ConnectionService {
         this.connectionRepository = connectionRepository;
     }
 
-    public Connection createConnection(CreateConnectionRequest request) {
+    public Connection createConnection(ConnectionRequest request) {
         Connection connection = new Connection();
         connection.setUsername(request.username());
         connection.setPassword(request.password());
@@ -37,7 +37,12 @@ public class ConnectionService {
                         "No connection found with id: " + id));
     }
 
-    public Connection replaceConnection(Connection connection) {
+    public Connection replaceConnection(Long id, ConnectionRequest request) {
+        Connection connection = getConnection(id);
+        connection.setUsername(request.username());
+        connection.setPassword(request.password());
+        connection.setUrl(request.url());
+        connection.setType(request.type());
         return connectionRepository.save(connection);
     }
 
@@ -59,6 +64,6 @@ public class ConnectionService {
     }
 
     public void deleteConnection(Long id) {
-        connectionRepository.deleteById(id);
+        connectionRepository.delete(getConnection(id));
     }
 }
