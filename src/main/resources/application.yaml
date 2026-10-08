@@ -1,6 +1,22 @@
 spring:
+  config:
+    import: optional:file:.env[.properties]
   application:
     name: LogiComposer
+  docker:
+    compose:
+      start:
+        # Always run "docker compose up": the default skips it if ANY service is running,
+        # e.g. only pagila, leaving the app's own database stopped
+        skip: never
   jpa:
     hibernate:
       ddl-auto: validate
+  ai:
+    anthropic:
+      # Never put the key here: set the ANTHROPIC_API_KEY environment variable instead
+      api-key: ${ANTHROPIC_API_KEY}
+      chat:
+        options:
+          model: claude-opus-5-5
+          max-tokens: 16000

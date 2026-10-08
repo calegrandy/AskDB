@@ -10,6 +10,22 @@ services:
     volumes:
       - db-data:/var/lib/postgresql/data
 
+  # Sample database (a DVD rental store) for asking questions against, and for evals
+  pagila:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: pagila
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${PAGILA_PASSWORD:-pagila}
+    ports:
+      - "5433:5432"
+    volumes:
+      - pagila-data:/var/lib/postgresql/data
+      - ./docker/pagila/load-pagila.sh:/docker-entrypoint-initdb.d/load-pagila.sh:ro
+    labels:
+      # Not the app's own database: stop Spring Boot's Docker Compose support from connecting to it
+      org.springframework.boot.ignore: true
+
   pgadmin:
     image: dpage/pgadmin4:latest
     environment:
@@ -24,4 +40,5 @@ services:
 
 volumes:
   db-data:
+  pagila-data:
   pgadmin-data:
