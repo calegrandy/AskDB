@@ -8,6 +8,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
@@ -81,5 +82,63 @@ class QueryToolsTest {
         Object result = tool.runSql("SELECT generate_series(1, 500) AS n");
 
         assertThat((List<?>) result).hasSize(SqlTool.MAX_ROWS);
+    }
+
+    @Test
+    void runSqlRejectsNonSelectStatement() {
+        SqlTool tool = new SqlTool(jdbcTemplate);
+
+        Object result = tool.runSql("DELETE FROM film");
+
+        assertThat(errorOf(result)).contains("Only SELECT");
+        assertThat(filmCount()).isEqualTo(2);
+    }
+
+    @Test
+    void runSqlRejectsMultipleStatements() {
+        SqlTool tool = new SqlTool(jdbcTemplate);
+
+        Object result = tool.runSql("SELECT 1; DELETE FROM film");
+
+        assertThat(errorOf(result)).isNotBlank();
+        assertThat(filmCount()).isEqualTo(2);
+    }
+
+    @Test
+    void runSqlBlocksWritesHiddenInsideSelect() {
+        SqlTool tool = new SqlTool(jdbcTemplate);
+
+        // A data-modifying CTE starts with WITH, so it passes the app's text check: the read-only transaction must stop it.
+        Object result = tool.runSql("WITH deleted AS (DELETE FROM film RETURNING *) SELECT count(*) FROM deleted");
+
+        assertThat(errorOf(result)).contains("read-only transaction");
+        assertThat(filmCount()).isEqualTo(2);
+    }
+
+    @Test
+    void runSqlCancelsSlowQuery() {
+        SqlTool tool = new SqlTool(jdbcTemplate, Duration.ofSeconds(1));
+
+        Object result = tool.runSql("SELECT pg_sleep(10)");
+
+        assertThat(errorOf(result)).contains("statement timeout");
+    }
+
+    @Test
+    void runSqlAllowsTrailingSemicolon() {
+        SqlTool tool = new SqlTool(jdbcTemplate);
+
+        Object result = tool.runSql("SELECT title FROM film ORDER BY film_id;");
+
+        assertThat((List<?>) result).hasSize(2);
+    }
+
+    private static String errorOf(Object result) {
+        assertThat(result).as("expected an error result").isInstanceOf(Map.class);
+        return String.valueOf(((Map<?, ?>) result).get("error"));
+    }
+
+    private static int filmCount() {
+        return jdbcTemplate.queryForObject("SELECT count(*) FROM film", Integer.class);
     }
 }
