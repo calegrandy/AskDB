@@ -19,11 +19,11 @@ Requires JDK 25 and Docker.
 
 2. Start the app with `./mvnw spring-boot:run`. Docker Compose starts the app's database and a [Pagila](https://github.com/devrimgunduz/pagila) sample database (a DVD rental store) to ask questions about.
 
-3. Register the sample database:
+3. Register the sample database, using its read-only `askdb_reader` user:
 
    ```sh
    curl -X POST localhost:8080/api/connections -H 'Content-Type: application/json' \
-     -d '{"username":"postgres","password":"pagila","url":"jdbc:postgresql://localhost:5433/pagila","type":"postgresql"}'
+     -d '{"username":"askdb_reader","password":"askdb_reader","url":"jdbc:postgresql://localhost:5433/pagila","type":"postgresql"}'
    ```
 
 4. Ask a question, using the `id` returned above:
@@ -32,6 +32,20 @@ Requires JDK 25 and Docker.
    curl -X POST localhost:8080/api/connections/1/queries -H 'Content-Type: application/json' \
      -d '{"question":"Which 5 customers spent the most in total?"}'
    ```
+
+## Security
+
+SQL written by the model is treated as untrusted. Every query runs behind these safeguards:
+
+- **SELECT only:** queries must start with `SELECT` or `WITH`.
+- **One statement:** queries run as prepared statements, which PostgreSQL limits to a single statement.
+- **Read-only:** each query runs in a read-only transaction that is always rolled back, so the database rejects any write.
+- **Limits:** queries are cancelled after 10 seconds, and at most 100 rows are returned.
+- **No credentials sent to the model:** Claude only sees the schema and query results, never the connection details.
+
+**Register connections with a read-only database user.** AskDB doesn't check a registered user's privileges. The safeguards above block writes, but they don't limit what can be *read*: the model can query anything the user can access, and superusers can even read server files through SQL functions. Create a user with `SELECT` access to only the data you want to be queryable. The Pagila sample includes one, `askdb_reader`.
+
+Not yet in place: authentication on the API, encryption of stored connection passwords, and restrictions on which hosts connections may point to. These are planned for the AWS deployment.
 
 ## Tests
 
