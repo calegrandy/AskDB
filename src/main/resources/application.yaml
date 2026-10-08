@@ -2,7 +2,7 @@ spring:
   config:
     import: optional:file:.env[.properties]
   application:
-    name: LogiComposer
+    name: AskDB
   docker:
     compose:
       start:

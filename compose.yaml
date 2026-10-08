@@ -1,3 +1,6 @@
+# Project name for container and volume names, so they don't depend on the folder name
+name: askdb
+
 services:
   db:
     image: postgres:16-alpine
