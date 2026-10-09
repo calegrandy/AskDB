@@ -33,6 +33,21 @@ Requires JDK 25 and Docker.
      -d '{"question":"Which 5 customers spent the most in total?"}'
    ```
 
+   The response has the answer, the SQL it was based on, the result rows, and a `queryId` for its history entry.
+
+## Query history
+
+Every question is saved, whether it succeeds or fails, to help debug wrong answers, find test cases and track cost.
+
+| Endpoint | Returns |
+| --- | --- |
+| `GET /api/connections/{id}/queries?page=0&size=20` | A connection's questions, newest first, paginated (default 20 per page) |
+| `GET /api/queries/{queryId}` | One question, even if its connection has since been deleted |
+
+Each entry records the question, status (`SUCCEEDED` or `FAILED`), the answer, the final SQL and its row count, every SQL attempt the model made (including failed ones it then corrected), any error message, the model used, input and output tokens, duration and time asked.
+
+Result rows are deliberately **not** stored: they're copies of data from the queried database, and the SQL is enough to re-run a query.
+
 ## Security
 
 SQL written by the model is treated as untrusted. Every query runs behind these safeguards:
@@ -49,4 +64,4 @@ Not yet in place: authentication on the API, encryption of stored connection pas
 
 ## Tests
 
-`./mvnw test` runs integration tests against real PostgreSQL containers (Testcontainers). They don't call Claude and need no API key.
+`./mvnw test` runs integration tests against real PostgreSQL containers (Testcontainers). A scripted fake model stands in for Claude, so the full question flow is tested without an API key, at no cost, with the same result every run.
