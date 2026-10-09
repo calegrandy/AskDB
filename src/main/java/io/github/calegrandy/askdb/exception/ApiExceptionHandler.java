@@ -7,10 +7,17 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
-    @ExceptionHandler(ConnectionNotFoundException.class)
-    public ResponseEntity<ErrorResponse> handleNotFound(ConnectionNotFoundException ex) {
+    @ExceptionHandler({ConnectionNotFoundException.class, QueryNotFoundException.class})
+    public ResponseEntity<ErrorResponse> handleNotFound(RuntimeException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(new ErrorResponse(HttpStatus.NOT_FOUND.value(), ex.getMessage()));
+    }
+
+    // A service AskDB depends on (the model API or the queried database) failed.
+    @ExceptionHandler(QueryFailedException.class)
+    public ResponseEntity<ErrorResponse> handleQueryFailed(QueryFailedException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .body(new ErrorResponse(HttpStatus.BAD_GATEWAY.value(), ex.getMessage()));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

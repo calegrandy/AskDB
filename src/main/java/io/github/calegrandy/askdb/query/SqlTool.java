@@ -1,5 +1,6 @@
 package io.github.calegrandy.askdb.query;
 
+import io.github.calegrandy.askdb.model.QueryAttempt;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.dao.DataAccessException;
@@ -17,6 +18,7 @@ import java.sql.Statement;
 import java.sql.Time;
 import java.sql.Timestamp;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -44,6 +46,7 @@ public class SqlTool {
 
     private final JdbcTemplate jdbcTemplate;
     private final Duration timeout;
+    private final List<QueryAttempt> attempts = new ArrayList<>();
     private String lastSql;
     private List<Map<String, Object>> lastRows = List.of();
 
@@ -61,9 +64,10 @@ public class SqlTool {
             At most 100 rows are returned, and queries running longer than 10 seconds are cancelled. \
             On failure, returns the database error message.""")
     public Object runSql(@ToolParam(description = "A single PostgreSQL SELECT statement") String sql) {
+        long start = System.nanoTime();
         String query = withoutTrailingSemicolon(sql.strip());
         if (!READ_QUERY.matcher(query).find()) {
-            return error("Only SELECT queries (optionally starting with WITH) are allowed.");
+            return failed(query, "Only SELECT queries (optionally starting with WITH) are allowed.", start);
         }
 
         try {
@@ -74,10 +78,11 @@ public class SqlTool {
                     .toList();
             lastSql = query;
             lastRows = rows;
+            attempts.add(QueryAttempt.succeeded(query, rows.size(), elapsedMillis(start)));
             return rows;
         } catch (DataAccessException e) {
             // Returned, not thrown, so the model can read the error and fix its query.
-            return error(e.getMostSpecificCause().getMessage());
+            return failed(query, e.getMostSpecificCause().getMessage(), start);
         }
     }
 
@@ -87,6 +92,11 @@ public class SqlTool {
 
     public List<Map<String, Object>> lastRows() {
         return lastRows;
+    }
+
+    /** Every query run through this tool, in order, including failures. */
+    public List<QueryAttempt> attempts() {
+        return List.copyOf(attempts);
     }
 
     private List<Map<String, Object>> runReadOnly(Connection connection, String query) throws SQLException {
@@ -114,8 +124,13 @@ public class SqlTool {
         return sql.endsWith(";") ? sql.substring(0, sql.length() - 1).strip() : sql;
     }
 
-    private static Map<String, String> error(String message) {
+    private Map<String, String> failed(String query, String message, long start) {
+        attempts.add(QueryAttempt.failed(query, message, elapsedMillis(start)));
         return Map.of("error", message);
+    }
+
+    private static long elapsedMillis(long startNanos) {
+        return Duration.ofNanos(System.nanoTime() - startNanos).toMillis();
     }
 
     // JSON-friendly values: readable dates instead of epoch numbers, and driver-specific types as text.
