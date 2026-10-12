@@ -1,0 +1,446 @@
+# AskDB eval cases, asked against the Pagila sample database (pinned in docker/pagila/load-pagila.sh).
+#
+# Each case:
+#   id            stable identifier
+#   question      what is asked, exactly as a user would type it
+#   tags          [category, source]. Category is the skill tested; source is "user" (asked by a real user)
+#                 or "drafted" (written to cover a category)
+#   expect        answer        - the data answers it
+#                 cannot_answer - the data can't answer it, and the answer should say so
+#                 refuse        - it asks to change data, which AskDB must not do
+#   reference_sql verified query whose result is the correct data (answer cases only). Results are computed
+#                 from the pinned database when the eval runs, so they can't go stale.
+#   rubric        the facts a correct plain-English answer must state; the judge checks these
+#
+# Expected values quoted in the rubrics were verified against Pagila on 2026-10-10.
+
+cases:
+
+  # ---------- From real questions ----------
+
+  - id: customers-spent-under-80
+    question: How many customers spent a total of less than 80?
+    tags: [aggregation, user]
+    expect: answer
+    reference_sql: |
+      SELECT count(*) AS customers
+      FROM (SELECT customer_id, sum(amount) AS total FROM payment GROUP BY customer_id) t
+      WHERE total < 80
+    rubric: |
+      - States that 54 customers spent less than 80 in total.
+      - Mentioning that every customer has at least one payment is fine but not required.
+
+  - id: top-5-films-most-actors
+    question: Give me the top 5 films with the most actors?
+    tags: [ranking-ties, user]
+    expect: answer
+    reference_sql: |
+      SELECT f.title, count(*) AS actors
+      FROM film_actor fa JOIN film f USING (film_id)
+      GROUP BY f.film_id, f.title
+      ORDER BY actors DESC, f.title
+      LIMIT 7
+    rubric: |
+      - Names LAMBS CINCINATTI as the film with the most actors (15).
+      - Says that 6 films tie at 13 actors for the next places, so a top 5 can't be cut cleanly,
+        or lists those tied films. Silently picking 4 of the 6 tied films is incorrect.
+
+  - id: store-most-least-customers
+    question: Which store has the most and least customers associated with it?
+    tags: [ambiguity, user]
+    expect: answer
+    reference_sql: |
+      SELECT s.store_id, count(c.customer_id) AS customers
+      FROM store s LEFT JOIN customer c USING (store_id)
+      GROUP BY s.store_id
+      ORDER BY customers DESC, s.store_id
+      LIMIT 3
+    rubric: |
+      - Says store 1 has the most customers (326).
+      - Says only 2 of the 500 stores have any customers (store 1 with 326, store 2 with 273).
+      - For "least", either names store 2 as least among stores with customers, or says the other
+        498 stores tie at zero. Either is correct if it's clear which interpretation is used.
+
+  - id: store-largest-staff
+    question: Which store has the largest staff?
+    tags: [ranking-ties, user]
+    expect: answer
+    reference_sql: |
+      SELECT store_id, count(*) AS staff
+      FROM staff
+      GROUP BY store_id
+      ORDER BY staff DESC, store_id
+      LIMIT 3
+    rubric: |
+      - Says stores 72 and 144 tie for the largest staff, with 9 staff each.
+      - Naming only one of the two as "the" largest is incorrect.
+
+  - id: store-smallest-staff
+    question: Which single store has the smallest staff?
+    tags: [ranking-ties, user]
+    expect: answer
+    reference_sql: |
+      SELECT staff_count, count(*) AS stores
+      FROM (SELECT s.store_id, count(st.staff_id) AS staff_count
+            FROM store s LEFT JOIN staff st USING (store_id)
+            GROUP BY s.store_id) t
+      GROUP BY staff_count
+      ORDER BY staff_count
+      LIMIT 2
+    rubric: |
+      - Says there is no single store with the smallest staff.
+      - Says 25 stores have no staff at all.
+      - Optionally, but preferred, includes that 74 stores tie with 1.
+
+  - id: film-most-rented
+    question: Which film has been rented the most times?
+    tags: [join, user]
+    expect: answer
+    reference_sql: |
+      SELECT f.title, count(*) AS rentals
+      FROM rental r JOIN inventory i USING (inventory_id) JOIN film f USING (film_id)
+      GROUP BY f.film_id, f.title
+      ORDER BY rentals DESC
+      LIMIT 1
+    rubric: |
+      - Names BUCKET BROTHERHOOD, rented 34 times.
+
+  - id: film-least-rented
+    question: Which film has been rented the least times?
+    tags: [ranking-ties, user]
+    expect: answer
+    reference_sql: |
+      SELECT f.title, count(*) AS rentals
+      FROM rental r JOIN inventory i USING (inventory_id) JOIN film f USING (film_id)
+      GROUP BY f.film_id, f.title
+      HAVING count(*) = 4
+      ORDER BY f.title
+    rubric: |
+      - Says 42 films were never rented (0 rentals).
+      - Optionally, but preferred, includes that HARDLY ROBBERS, MIXED DOORS and TRAIN BUNCH tie at 4 rentals (least among films
+        that were rented).
+
+  - id: film-most-copies-one-store
+    question: Which film has the most copies in a single store?
+    tags: [ranking-ties, user]
+    expect: answer
+    reference_sql: |
+      SELECT max(copies) AS max_copies, count(*) AS film_store_pairs_at_max
+      FROM (SELECT film_id, store_id, count(*) AS copies FROM inventory GROUP BY film_id, store_id) t
+      WHERE copies = (SELECT max(n) FROM (SELECT count(*) AS n FROM inventory GROUP BY film_id, store_id) u)
+    rubric: |
+      - Says the most copies of one film in one store is 4.
+      - Says this is a large tie (525 film-and-store combinations have 4 copies), rather than
+        presenting one film as the single answer.
+
+  - id: actor-most-films
+    question: Which actor appears in the most different films?
+    tags: [join, user]
+    expect: answer
+    reference_sql: |
+      SELECT a.first_name, a.last_name, count(DISTINCT fa.film_id) AS films
+      FROM film_actor fa JOIN actor a USING (actor_id)
+      GROUP BY a.actor_id, a.first_name, a.last_name
+      ORDER BY films DESC
+      LIMIT 1
+    rubric: |
+      - Names GINA DEGENERES, in 42 films.
+
+  - id: top-3-categories-most-films
+    question: Show me the top 3 film categories that contain the most films.
+    tags: [aggregation, user]
+    expect: answer
+    reference_sql: |
+      SELECT c.name, count(*) AS films
+      FROM film_category fc JOIN category c USING (category_id)
+      GROUP BY c.name
+      ORDER BY films DESC, c.name
+      LIMIT 3
+    rubric: |
+      - Names Music (152), Drama (152) and Travel (151) as the top 3.
+      - Noting that Music and Drama tie is fine.
+
+  - id: films-in-multiple-categories
+    question: Show me all films that belong to more than 1 category.
+    tags: [large-result, user]
+    expect: answer
+    reference_sql: |
+      SELECT count(*) AS films
+      FROM (SELECT film_id FROM film_category GROUP BY film_id HAVING count(*) > 1) t
+    rubric: |
+      - Says 964 films belong to more than one category.
+      - Makes clear that not all 964 are listed (results are capped at 100 rows), instead of
+        presenting a partial list as complete.
+
+  - id: film-most-categories
+    question: Which film belongs to the most categories?
+    tags: [ranking-ties, user]
+    expect: answer
+    reference_sql: |
+      SELECT categories, count(*) AS films
+      FROM (SELECT film_id, count(*) AS categories FROM film_category GROUP BY film_id) t
+      GROUP BY categories
+      ORDER BY categories DESC
+      LIMIT 1
+    rubric: |
+      - Says the most is 3 categories, shared by 403 films, so there is no single film.
+
+  - id: max-categories-per-film
+    question: What is the highest number of categories that one film belongs to?
+    tags: [aggregation, user]
+    expect: answer
+    reference_sql: |
+      SELECT max(categories) AS max_categories
+      FROM (SELECT film_id, count(*) AS categories FROM film_category GROUP BY film_id) t
+    rubric: |
+      - Says 3.
+
+  # ---------- Drafted to cover more categories ----------
+
+  - id: count-films
+    question: How many films are in the catalog?
+    tags: [lookup, drafted]
+    expect: answer
+    reference_sql: SELECT count(*) AS films FROM film
+    rubric: |
+      - Says 1,000 films.
+
+  - id: films-not-in-english
+    question: How many films are in a language other than English?
+    tags: [lookup, drafted]
+    expect: answer
+    reference_sql: |
+      SELECT count(*) AS films
+      FROM film f JOIN language l USING (language_id)
+      WHERE trim(l.name) <> 'English'
+    rubric: |
+      - Says 415 films.
+
+  - id: revenue-march-2022
+    question: What was the total revenue in March 2022?
+    tags: [date, drafted]
+    expect: answer
+    reference_sql: |
+      SELECT sum(amount) AS revenue
+      FROM payment
+      WHERE payment_date >= '2022-03-01' AND payment_date < '2022-04-01'
+    rubric: |
+      - Says 11,413.86 (by payment date).
+
+  - id: rentals-may-2022
+    question: How many rentals were made in May 2022?
+    tags: [date, drafted]
+    expect: answer
+    reference_sql: |
+      SELECT count(*) AS rentals
+      FROM rental
+      WHERE rental_date >= '2022-05-01' AND rental_date < '2022-06-01'
+    rubric: |
+      - Says 1,156 rentals.
+
+  - id: revenue-by-month
+    question: How did total revenue change from month to month?
+    tags: [date, drafted]
+    expect: answer
+    reference_sql: |
+      SELECT to_char(date_trunc('month', payment_date), 'YYYY-MM') AS month, sum(amount) AS revenue
+      FROM payment
+      GROUP BY 1
+      ORDER BY 1
+    rubric: |
+      - Gives monthly revenue for January through July 2022 (by payment date), or describes the trend
+        accurately: about 3,095 in January, roughly 10,000 to 11,400 per month from February to June,
+        and about 9,713 in July.
+      - Notes that January is low because payments only start on January 23 (a partial month).
+        Treating January as a real slump without this caveat is a weaker answer, not a wrong one.
+
+  - id: top-customer-spend
+    question: Which customer has spent the most money in total?
+    tags: [join, drafted]
+    expect: answer
+    reference_sql: |
+      SELECT c.first_name, c.last_name, sum(p.amount) AS total
+      FROM payment p JOIN customer c USING (customer_id)
+      GROUP BY c.customer_id, c.first_name, c.last_name
+      ORDER BY total DESC
+      LIMIT 1
+    rubric: |
+      - Names KARL SEAL, with 221.55 in total.
+
+  - id: category-most-revenue
+    question: Which film category brought in the most revenue?
+    tags: [ambiguity, drafted]
+    expect: answer
+    reference_sql: |
+      SELECT cat.name, sum(p.amount) AS revenue
+      FROM payment p
+        JOIN rental r USING (rental_id)
+        JOIN inventory i USING (inventory_id)
+        JOIN film_category fc USING (film_id)
+        JOIN category cat USING (category_id)
+      GROUP BY cat.name
+      ORDER BY revenue DESC
+      LIMIT 3
+    rubric: |
+      - Names Foreign as the top category (10,507.67 when each payment counts toward every category its
+        film belongs to).
+      - Ideally notes that most films belong to several categories, so category revenues overlap and
+        don't add up to total revenue. Missing this caveat is a weaker answer, not a wrong one.
+
+  - id: films-never-rented
+    question: How many films have never been rented?
+    tags: [never, drafted]
+    expect: answer
+    reference_sql: |
+      SELECT count(*) AS films
+      FROM film f
+      WHERE NOT EXISTS (SELECT 1 FROM inventory i JOIN rental r USING (inventory_id) WHERE i.film_id = f.film_id)
+    rubric: |
+      - Says 42 films.
+      - Noting that none of them have any copies in inventory is good but not required.
+
+  - id: country-most-customers
+    question: Which country has the most customers?
+    tags: [join, drafted]
+    expect: answer
+    reference_sql: |
+      SELECT co.country, count(*) AS customers
+      FROM customer cu
+        JOIN address a USING (address_id)
+        JOIN city ci USING (city_id)
+        JOIN country co USING (country_id)
+      GROUP BY co.country
+      ORDER BY customers DESC
+      LIMIT 1
+    rubric: |
+      - Names India, with 60 customers.
+
+  - id: average-rental-length
+    question: On average, how many days do customers keep a rental before returning it?
+    tags: [aggregation, drafted]
+    expect: answer
+    reference_sql: |
+      SELECT avg(extract(epoch FROM return_date - rental_date) / 86400) AS avg_days
+      FROM rental
+      WHERE return_date IS NOT NULL
+    rubric: |
+      - Says about 5 days (5.03), based on returned rentals.
+
+  - id: rentals-not-returned
+    question: How many rentals haven't been returned yet?
+    tags: [lookup, drafted]
+    expect: answer
+    reference_sql: SELECT count(*) AS open_rentals FROM rental WHERE return_date IS NULL
+    rubric: |
+      - Says 183 rentals.
+
+  - id: most-common-rating
+    question: What's the most common film rating?
+    tags: [aggregation, drafted]
+    expect: answer
+    reference_sql: |
+      SELECT rating, count(*) AS films
+      FROM film
+      GROUP BY rating
+      ORDER BY films DESC
+      LIMIT 1
+    rubric: |
+      - Says PG-13, with 223 films.
+
+  - id: store-most-revenue
+    question: Which store made the most money?
+    tags: [ambiguity, drafted]
+    expect: answer
+    reference_sql: |
+      SELECT cu.store_id, sum(p.amount) AS revenue
+      FROM payment p JOIN customer cu USING (customer_id)
+      GROUP BY cu.store_id
+      ORDER BY revenue DESC
+    rubric: |
+      - By the customers' home store: store 1 (37,001.52) ahead of store 2 (30,414.99).
+      - By the store of the staff member who took the payment: store 33 (33,927.04) ahead of store 25
+        (33,489.47).
+      - By the store that owned the rented copy (inventory store, also the built-in sales_by_store view):
+        store 2 (33,726.77) just ahead of store 1 (33,689.74).
+      - Any of these interpretations is correct if the answer says which one it used. Best answers notice
+        they give different stores.
+
+  - id: longest-films
+    question: Which films are the longest?
+    tags: [ranking-ties, drafted]
+    expect: answer
+    reference_sql: |
+      SELECT title, length
+      FROM film
+      WHERE length = (SELECT max(length) FROM film)
+      ORDER BY title
+    rubric: |
+      - Says the longest length is 185 minutes, shared by 10 films (listing them is good).
+
+  - id: rentals-in-2021
+    question: How many rentals were made in 2021?
+    tags: [date, drafted]
+    expect: answer
+    reference_sql: SELECT count(*) AS rentals FROM rental WHERE rental_date >= '2021-01-01' AND rental_date < '2022-01-01'
+    rubric: |
+      - Says there were no rentals in 2021.
+      - Ideally explains that the rental data starts in February 2022.
+
+  - id: rentals-july-2022-list
+    question: List all the rentals made in July 2022.
+    tags: [large-result, drafted]
+    expect: answer
+    reference_sql: |
+      SELECT count(*) AS rentals
+      FROM rental
+      WHERE rental_date >= '2022-07-01' AND rental_date < '2022-08-01'
+    rubric: |
+      - Says there were 6,739 rentals in July 2022.
+      - Makes clear the full list isn't shown (results are capped at 100 rows), instead of presenting
+        a partial list as complete.
+
+  # ---------- The data can't answer these ----------
+
+  - id: store-profit-margin
+    question: What is each store's profit margin?
+    tags: [unanswerable, drafted]
+    expect: cannot_answer
+    rubric: |
+      - Says profit margin can't be calculated because the database has no cost or expense data
+        (only payments received).
+      - Offering revenue instead is fine. Presenting revenue as profit margin is incorrect.
+
+  - id: best-reviewed-films
+    question: Which films have the best customer reviews?
+    tags: [unanswerable, drafted]
+    expect: cannot_answer
+    rubric: |
+      - Says the database has no review or rating-by-customer data.
+      - Must not present the MPAA rating (G, PG, ...) or rental counts as review scores.
+
+  - id: rentals-last-week
+    question: How many films were rented last week?
+    tags: [unanswerable, drafted]
+    expect: cannot_answer
+    rubric: |
+      - Says the data ends in 2022, so there are no rentals for last week, or explains it can't tell
+        which week is meant relative to this old data.
+      - Must not report a count for some week in 2022 as if it were last week.
+
+  # ---------- Requests to change data ----------
+
+  - id: delete-inactive-customers
+    question: Delete all customers who haven't rented anything this year.
+    tags: [refuse, drafted]
+    expect: refuse
+    rubric: |
+      - Says it can't delete or change data (it only has read-only access).
+      - Must not claim that anything was deleted.
+
+  - id: set-rental-rate
+    question: Set the rental rate of every film to $0.99.
+    tags: [refuse, drafted]
+    expect: refuse
+    rubric: |
+      - Says it can't change data (it only has read-only access).
+      - Must not claim that any rates were changed.

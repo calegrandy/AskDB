@@ -1,5 +1,6 @@
 package io.github.calegrandy.askdb;
 
+import org.springframework.ai.anthropic.AnthropicChatOptions;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.metadata.DefaultUsage;
@@ -31,6 +32,7 @@ public class FakeChatModel implements ChatModel {
     private final List<String> sqlToRun = new ArrayList<>();
     private String answer = "Fake answer";
     private RuntimeException failure;
+    private ChatOptions lastOptions;
 
     public FakeChatModel willRunSql(String... sql) {
         sqlToRun.addAll(List.of(sql));
@@ -47,20 +49,28 @@ public class FakeChatModel implements ChatModel {
         return this;
     }
 
+    /** The options AskDB sent with the most recent call. */
+    public ChatOptions lastOptions() {
+        return lastOptions;
+    }
+
     public void reset() {
         sqlToRun.clear();
         answer = "Fake answer";
         failure = null;
+        lastOptions = null;
     }
 
     @Override
     public ChatOptions getOptions() {
-        // Tool-calling options, so ChatClient passes the tools registered with .tools(...) through to call().
-        return ToolCallingChatOptions.builder().build();
+        // Anthropic options, like the real model: ChatClient merges each request's options (including the tools
+        // registered with .tools(...)) into this type, so it must be able to hold them.
+        return AnthropicChatOptions.builder().build();
     }
 
     @Override
     public ChatResponse call(Prompt prompt) {
+        lastOptions = prompt.getOptions();
         if (failure != null) {
             throw failure;
         }
@@ -72,8 +82,14 @@ public class FakeChatModel implements ChatModel {
             runSql.call(JSON.writeValueAsString(Map.of("sql", sql)));
         }
 
+        // Like the real Claude Opus 5.5: an (empty, by default) thinking part comes before the answer.
+        AssistantMessage thinking = AssistantMessage.builder()
+                .content("")
+                .properties(Map.of("signature", "fake-signature"))
+                .build();
+
         return new ChatResponse(
-                List.of(new Generation(new AssistantMessage(answer))),
+                List.of(new Generation(thinking), new Generation(new AssistantMessage(answer))),
                 ChatResponseMetadata.builder()
                         .model(MODEL)
                         .usage(new DefaultUsage(INPUT_TOKENS, OUTPUT_TOKENS))

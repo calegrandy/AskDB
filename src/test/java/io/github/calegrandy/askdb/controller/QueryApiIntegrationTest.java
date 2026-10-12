@@ -1,5 +1,6 @@
 package io.github.calegrandy.askdb.controller;
 
+import com.anthropic.core.JsonValue;
 import com.jayway.jsonpath.JsonPath;
 import io.github.calegrandy.askdb.ContainersConfig;
 import io.github.calegrandy.askdb.FakeAiConfig;
@@ -10,6 +11,7 @@ import io.github.calegrandy.askdb.repository.ConnectionRepository;
 import io.github.calegrandy.askdb.repository.QueryHistoryRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.anthropic.AnthropicChatOptions;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -21,6 +23,7 @@ import org.springframework.test.web.servlet.assertj.MvcTestResult;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -94,6 +97,18 @@ class QueryApiIntegrationTest {
                         }
                         """.formatted(connection.getId(), FakeChatModel.MODEL,
                         FakeChatModel.INPUT_TOKENS, FakeChatModel.OUTPUT_TOKENS));
+    }
+
+    @Test
+    void asksClaudeToDropReorderedThinkingBlocksInsteadOfFailing() {
+        assertThat(ask("Anything?")).hasStatusOk();
+
+        // Workaround for Spring AI 2.0.1 re-sending thinking out of order in the tool loop (see DatabaseQueryService).
+        assertThat(fakeModel.lastOptions()).isInstanceOfSatisfying(AnthropicChatOptions.class, options -> {
+            assertThat(options.getHttpHeaders()).containsEntry("anthropic-beta", "thinking-binding-controls-2026-08-01");
+            assertThat(options.getThinking().asAdaptive()._additionalProperties())
+                    .containsEntry("block_binding", JsonValue.from(Map.of("prefix_mismatch_behavior", "drop_block")));
+        });
     }
 
     @Test

@@ -40,6 +40,9 @@ services:
       - db
     volumes:
       - pgadmin-data:/var/lib/pgadmin
+      # Pre-registered servers, loaded the first time pgAdmin creates its storage (passwords are asked for on connect)
+      # To reload it, delete the askdb_pgadmin-data volume, or add servers by hand.
+      - ./docker/pgadmin/servers.json:/pgadmin4/servers.json:ro
 
 volumes:
   db-data:

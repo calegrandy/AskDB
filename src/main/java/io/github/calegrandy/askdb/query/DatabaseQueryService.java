@@ -1,5 +1,8 @@
 package io.github.calegrandy.askdb.query;
 
+import com.anthropic.core.JsonValue;
+import com.anthropic.models.messages.ThinkingConfigAdaptive;
+import com.anthropic.models.messages.ThinkingConfigParam;
 import io.github.calegrandy.askdb.dto.QueryResponse;
 import io.github.calegrandy.askdb.enums.QueryStatus;
 import io.github.calegrandy.askdb.exception.QueryFailedException;
@@ -7,9 +10,12 @@ import io.github.calegrandy.askdb.model.Connection;
 import io.github.calegrandy.askdb.model.QueryHistory;
 import io.github.calegrandy.askdb.repository.QueryHistoryRepository;
 import io.github.calegrandy.askdb.service.ConnectionService;
+import org.springframework.ai.anthropic.AnthropicChatOptions;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
@@ -18,6 +24,8 @@ import org.springframework.util.StringUtils;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Answers a plain-English question about a registered database: gives Claude the schema and a SQL tool,
@@ -38,6 +46,18 @@ public class DatabaseQueryService {
             Schema (one table per line):
             %s
             """;
+
+    // Workaround for a Spring AI 2.0.1 bug: in the tool loop it sends Claude's earlier reply back with the text
+    // moved ahead of the thinking, and Opus 5.5 rejects reordered thinking with a 400. "drop_block" tells the API
+    // to drop that thinking block instead of failing. Remove once Spring AI keeps the original block order.
+    private static AnthropicChatOptions.Builder thinkingOptions() {
+        return AnthropicChatOptions.builder()
+                .thinking(ThinkingConfigParam.ofAdaptive(ThinkingConfigAdaptive.builder()
+                        .putAdditionalProperty("block_binding",
+                                JsonValue.from(Map.of("prefix_mismatch_behavior", "drop_block")))
+                        .build()))
+                .httpHeaders(Map.of("anthropic-beta", "thinking-binding-controls-2026-08-01"));
+    }
 
     private final ConnectionService connectionService;
     private final QueryHistoryRepository queryHistoryRepository;
@@ -72,6 +92,7 @@ public class DatabaseQueryService {
             sqlTool = new SqlTool(jdbcTemplate);
 
             ChatResponse response = chatClient.prompt()
+                    .options(thinkingOptions())
                     .system(SYSTEM_PROMPT.formatted(SchemaReader.describe(jdbcTemplate)))
                     .user(question)
                     .tools(sqlTool)
@@ -92,7 +113,7 @@ public class DatabaseQueryService {
 
     private static void recordSuccess(QueryHistory history, ChatResponse response, SqlTool sqlTool) {
         history.setStatus(QueryStatus.SUCCEEDED);
-        history.setAnswer(response.getResult().getOutput().getText());
+        history.setAnswer(answerText(response));
         history.setFinalSql(sqlTool.lastSql());
         history.setRowCount(sqlTool.lastSql() == null ? null : sqlTool.lastRows().size());
 
@@ -103,6 +124,17 @@ public class DatabaseQueryService {
         if (StringUtils.hasText(response.getMetadata().getModel())) {
             history.setModel(response.getMetadata().getModel());
         }
+    }
+
+    // Claude's reply can have several parts, and getResult() returns only the first. With thinking on,
+    // that's often an empty thinking part (marked with a "signature"), so join the text of the other parts.
+    private static String answerText(ChatResponse response) {
+        return response.getResults().stream()
+                .map(Generation::getOutput)
+                .filter(message -> !message.getMetadata().containsKey("signature"))
+                .map(AssistantMessage::getText)
+                .filter(StringUtils::hasText)
+                .collect(Collectors.joining("\n\n"));
     }
 
     private void save(QueryHistory history, SqlTool sqlTool, long startNanos) {
