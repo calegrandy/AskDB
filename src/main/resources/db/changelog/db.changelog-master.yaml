@@ -3,3 +3,5 @@ databaseChangeLog:
       file: db/changelog/changes/001-create-connection-table.yaml
   - include:
       file: db/changelog/changes/002-create-query-history-table.yaml
+  - include:
+      file: db/changelog/changes/003-widen-connection-password.yaml

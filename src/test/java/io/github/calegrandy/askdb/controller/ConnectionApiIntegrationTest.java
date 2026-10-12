@@ -12,6 +12,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
 import org.springframework.test.web.servlet.assertj.MvcTestResult;
 
@@ -31,6 +32,9 @@ class ConnectionApiIntegrationTest {
 
     @Autowired
     ConnectionRepository repository;
+
+    @Autowired
+    JdbcTemplate jdbcTemplate;
 
     // The container (and its data) is shared by every test in this class,
     // so start each test from an empty table.
@@ -277,6 +281,30 @@ class ConnectionApiIntegrationTest {
                         { "username": "frank2" }
                         """))
                 .bodyJson().doesNotHavePath("$.password");
+    }
+
+    @Test
+    void passwordIsEncryptedInTheDatabase() {
+        assertThat(mvc.post().uri("/api/connections")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {
+                          "username": "heidi",
+                          "password": "secret",
+                          "url": "jdbc:postgresql://localhost:5432/app",
+                          "type": "postgresql"
+                        }
+                        """))
+                .hasStatus(HttpStatus.CREATED);
+
+        // Read the raw column with SQL: through JPA the password would already be decrypted.
+        assertThat(jdbcTemplate.queryForObject("SELECT password FROM connection", String.class))
+                .startsWith("v1:")
+                .doesNotContain("secret");
+        assertThat(repository.findAll())
+                .singleElement()
+                .extracting(Connection::getPassword)
+                .isEqualTo("secret");
     }
 
     private static Connection newConnection(String username) {

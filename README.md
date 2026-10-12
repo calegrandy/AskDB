@@ -12,10 +12,13 @@ Requires JDK 25 and Docker.
 
    ```
    ANTHROPIC_API_KEY=<your Anthropic API key>
+   ASKDB_ENCRYPTION_KEY=<output of: openssl rand -base64 32>
    DB_PASSWORD=<any password for the local database>
    PGADMIN_EMAIL=<any email>
    PGADMIN_PASSWORD=<any password>
    ```
+
+   `ASKDB_ENCRYPTION_KEY` encrypts the connection passwords AskDB stores. Keep it safe: if it's lost or changed, stored connections can't be read and must be registered again.
 
 2. Start the app with `./mvnw spring-boot:run`. Docker Compose starts the app's database and a [Pagila](https://github.com/devrimgunduz/pagila) sample database (a DVD rental store) to ask questions about.
 
@@ -58,9 +61,11 @@ SQL written by the model is treated as untrusted. Every query runs behind these 
 - **Limits:** queries are cancelled after 10 seconds, and at most 100 rows are returned.
 - **No credentials sent to the model:** Claude only sees the schema and query results, never the connection details.
 
+Stored connection passwords are **encrypted at rest** with AES-256-GCM, using a key kept outside the code and the database (`ASKDB_ENCRYPTION_KEY`). A leaked database alone doesn't expose them, and a tampered value fails to decrypt instead of being used. They're never returned by the API or written to logs.
+
 **Register connections with a read-only database user.** AskDB doesn't check a registered user's privileges. The safeguards above block writes, but they don't limit what can be *read*: the model can query anything the user can access, and superusers can even read server files through SQL functions. Create a user with `SELECT` access to only the data you want to be queryable. The Pagila sample includes one, `askdb_reader`.
 
-Not yet in place: authentication on the API, encryption of stored connection passwords, and restrictions on which hosts connections may point to. These are planned for the AWS deployment.
+Not yet in place: authentication on the API and restrictions on which hosts connections may point to. These are planned for the AWS deployment.
 
 ## Tests
 
