@@ -8,8 +8,9 @@ services:
       POSTGRES_DB: connections
       POSTGRES_USER: app
       POSTGRES_PASSWORD: ${DB_PASSWORD}
+    # 127.0.0.1: reachable from this machine only, not from others on the same network (e.g. public Wi-Fi)
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - db-data:/var/lib/postgresql/data
 
@@ -21,7 +22,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${PAGILA_PASSWORD:-pagila}
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - pagila-data:/var/lib/postgresql/data
       - ./docker/pagila/load-pagila.sh:/docker-entrypoint-initdb.d/load-pagila.sh:ro
@@ -35,7 +36,7 @@ services:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
     ports:
-      - "5050:80"
+      - "127.0.0.1:5050:80"
     depends_on:
       - db
     volumes:

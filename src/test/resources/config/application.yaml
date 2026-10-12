@@ -1,0 +1,5 @@
+# Test-only settings, added on top of src/main/resources/application.yaml (Spring Boot also loads config/).
+askdb:
+  encryption:
+    # A fixed, throwaway key so tests don't need ASKDB_ENCRYPTION_KEY. Never use it outside tests.
+    key: AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=

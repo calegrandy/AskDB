@@ -20,3 +20,9 @@ spring:
         options:
           model: claude-opus-5-5
           max-tokens: 16000
+
+askdb:
+  encryption:
+    # Encrypts stored connection passwords. Like the API key, never put it here: set ASKDB_ENCRYPTION_KEY
+    # (generate one with: openssl rand -base64 32). Losing it makes every stored password unreadable.
+    key: ${ASKDB_ENCRYPTION_KEY}

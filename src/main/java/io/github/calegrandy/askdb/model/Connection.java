@@ -1,6 +1,7 @@
 package io.github.calegrandy.askdb.model;
 
 import io.github.calegrandy.askdb.enums.ConnectionType;
+import io.github.calegrandy.askdb.security.EncryptedStringConverter;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -20,6 +21,7 @@ public class Connection {
     private Long id;
     private String username;
     @ToString.Exclude
+    @Convert(converter = EncryptedStringConverter.class)
     private String password;
     private String url;
     @Enumerated(EnumType.STRING)
