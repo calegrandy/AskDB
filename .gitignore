@@ -32,3 +32,11 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Evals ###
+# Commit cases, _state.json and each variant's results.jsonl; the rest is regenerated or scratch.
+.claude/hillclimb/**/traces/
+.claude/hillclimb/**/errors.jsonl
+.claude/hillclimb/**/report.html
+.claude/hillclimb/**/trajectory/
+.claude/hillclimb/*-archive/

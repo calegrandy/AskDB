@@ -65,3 +65,22 @@ Not yet in place: authentication on the API, encryption of stored connection pas
 ## Tests
 
 `./mvnw test` runs integration tests against real PostgreSQL containers (Testcontainers). A scripted fake model stands in for Claude, so the full question flow is tested without an API key, at no cost, with the same result every run.
+
+## Evals
+
+The tests above prove the code works; the eval measures whether Claude's **answers** are right. It asks AskDB 34 questions about the [Pagila](https://github.com/devrimgunduz/pagila) sample database (`src/test/resources/evals/pagila/cases.yaml`) and grades each answer two ways:
+
+- **answer_correct**: an LLM judge (Claude Sonnet 5.5) reads the question, a rubric, the reference query result and AskDB's answer, and decides pass or fail.
+- **sql_result_match**: a code check that the reference values appear in the rows of the last query AskDB ran. A diagnostic only: it fails correct answers whose last query was a different one.
+
+Cases cover lookups, aggregation, joins, dates, ties in rankings, ambiguous questions, large results, questions the data can't answer, and requests to change data, which must be refused.
+
+The eval calls the real Claude API and costs about **$1 per run**, so it's excluded from `./mvnw test`. With Pagila running (`docker compose up`) and `ANTHROPIC_API_KEY` in `.env`:
+
+```sh
+mvn test -Peval                                        # all cases
+mvn test -Peval -Deval.ids=count-films,store-most-revenue   # selected cases
+mvn test -Peval -Deval.variant=v1                      # a new variant, after changing a prompt or model
+```
+
+Results go to `.claude/hillclimb/ask-pagila/<variant>/results.jsonl`, one JSON row per case. A rerun skips cases already in the file, so delete the variant's folder to grade from scratch (for example, after changing the judge). The eval runs in UTC, because Postgres sessions use the JVM's timezone and that decides what "March 2022" means.
