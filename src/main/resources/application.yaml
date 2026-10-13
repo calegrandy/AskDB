@@ -12,6 +12,12 @@ spring:
   jpa:
     hibernate:
       ddl-auto: validate
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Cognito user pool: https://cognito-idp.<region>.amazonaws.com/<user pool id>
+          issuer-uri: ${COGNITO_ISSUER_URI}
   ai:
     anthropic:
       # Never put the key here: set the ANTHROPIC_API_KEY environment variable instead
@@ -22,6 +28,9 @@ spring:
           max-tokens: 16000
 
 askdb:
+  cognito:
+    # The app client whose access tokens AskDB accepts (see CognitoAccessTokenValidator)
+    client-id: ${COGNITO_CLIENT_ID}
   encryption:
     # Encrypts stored connection passwords. Like the API key, never put it here: set ASKDB_ENCRYPTION_KEY
     # (generate one with: openssl rand -base64 32). Losing it makes every stored password unreadable.

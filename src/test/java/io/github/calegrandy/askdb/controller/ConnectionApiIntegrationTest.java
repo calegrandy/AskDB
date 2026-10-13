@@ -1,6 +1,7 @@
 package io.github.calegrandy.askdb.controller;
 
 import io.github.calegrandy.askdb.ContainersConfig;
+import io.github.calegrandy.askdb.SignedInUserConfig;
 import io.github.calegrandy.askdb.enums.ConnectionType;
 import io.github.calegrandy.askdb.model.Connection;
 import io.github.calegrandy.askdb.repository.ConnectionRepository;
@@ -24,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import(ContainersConfig.class)
+@Import({ContainersConfig.class, SignedInUserConfig.class})
 class ConnectionApiIntegrationTest {
 
     @Autowired

@@ -6,13 +6,15 @@ Built with Java 25, Spring Boot 4, Spring AI and PostgreSQL.
 
 ## Run locally
 
-Requires JDK 25 and Docker.
+Requires JDK 25, Docker, and an [Amazon Cognito](https://aws.amazon.com/cognito/) user pool to sign in with (see [Authentication](#authentication)).
 
 1. Create a `.env` file in the project root (it's gitignored):
 
    ```
    ANTHROPIC_API_KEY=<your Anthropic API key>
    ASKDB_ENCRYPTION_KEY=<output of: openssl rand -base64 32>
+   COGNITO_ISSUER_URI=https://cognito-idp.<region>.amazonaws.com/<user pool ID>
+   COGNITO_CLIENT_ID=<app client ID>
    DB_PASSWORD=<any password for the local database>
    PGADMIN_EMAIL=<any email>
    PGADMIN_PASSWORD=<any password>
@@ -22,21 +24,49 @@ Requires JDK 25 and Docker.
 
 2. Start the app with `./mvnw spring-boot:run`. Docker Compose starts the app's database and a [Pagila](https://github.com/devrimgunduz/pagila) sample database (a DVD rental store) to ask questions about.
 
-3. Register the sample database, using its read-only `askdb_reader` user:
+3. Get an access token (see [Authentication](#authentication)) and keep it in `TOKEN` for the requests below.
+
+4. Register the sample database, using its read-only `askdb_reader` user:
 
    ```sh
-   curl -X POST localhost:8080/api/connections -H 'Content-Type: application/json' \
+   curl -X POST localhost:8080/api/connections -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
      -d '{"username":"askdb_reader","password":"askdb_reader","url":"jdbc:postgresql://localhost:5433/pagila","type":"postgresql"}'
    ```
 
-4. Ask a question, using the `id` returned above:
+5. Ask a question, using the `id` returned above:
 
    ```sh
-   curl -X POST localhost:8080/api/connections/1/queries -H 'Content-Type: application/json' \
+   curl -X POST localhost:8080/api/connections/1/queries -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
      -d '{"question":"Which 5 customers spent the most in total?"}'
    ```
 
    The response has the answer, the SQL it was based on, the result rows, and a `queryId` for its history entry.
+
+## Authentication
+
+Every API request needs a Cognito **access token** in an `Authorization: Bearer` header; without a valid one the API returns 401. AskDB only checks tokens, so sign-up and sign-in are Cognito's job.
+
+One-time setup in the AWS console:
+
+1. Create a Cognito **user pool** (the Lite tier is free for up to 10,000 monthly active users). Not an identity pool: AskDB needs tokens, not AWS credentials.
+2. Add a public app client (no client secret) with the `ALLOW_USER_PASSWORD_AUTH` flow enabled.
+3. Create a user. Users created in the console get a temporary password, so make it permanent:
+
+   ```sh
+   aws cognito-idp admin-set-user-password --user-pool-id <user pool ID> --username <email> --password '<new password>' --permanent
+   ```
+
+4. Put the pool's issuer URI and the app client ID in `.env` (see [Run locally](#run-locally)). The issuer URI is the pool's token signing key URL without `/.well-known/jwks.json`.
+
+To get a token (it lasts 60 minutes):
+
+```sh
+TOKEN=$(aws cognito-idp initiate-auth --region <region> --client-id <app client ID> \
+  --auth-flow USER_PASSWORD_AUTH --auth-parameters USERNAME=<email>,PASSWORD='<password>' \
+  --query AuthenticationResult.AccessToken --output text)
+```
+
+Use the `AccessToken`, not the `IdToken`: AskDB rejects ID tokens.
 
 ## Query history
 
@@ -61,22 +91,24 @@ SQL written by the model is treated as untrusted. Every query runs behind these 
 - **Limits:** queries are cancelled after 10 seconds, and at most 100 rows are returned.
 - **No credentials sent to the model:** Claude only sees the schema and query results, never the connection details.
 
+Every request must carry a valid Cognito **access token**. Spring Security checks its signature against the user pool's public keys, its issuer and its expiry. Cognito access tokens have no audience (`aud`) claim, so AskDB also checks that `token_use` is `access` and `client_id` is AskDB's app client: an ID token, or a token issued to another app in the same pool, is rejected. The API is stateless, with no sessions or cookies, so CSRF protection is off.
+
 Stored connection passwords are **encrypted at rest** with AES-256-GCM, using a key kept outside the code and the database (`ASKDB_ENCRYPTION_KEY`). A leaked database alone doesn't expose them, and a tampered value fails to decrypt instead of being used. They're never returned by the API or written to logs.
 
 **Register connections with a read-only database user.** AskDB doesn't check a registered user's privileges. The safeguards above block writes, but they don't limit what can be *read*: the model can query anything the user can access, and superusers can even read server files through SQL functions. Create a user with `SELECT` access to only the data you want to be queryable. The Pagila sample includes one, `askdb_reader`.
 
-Not yet in place: authentication on the API and restrictions on which hosts connections may point to. These are planned for the AWS deployment.
+Not yet in place: connections belong to no one yet, so any signed-in user can use any connection, and there are no restrictions on which hosts connections may point to. Both are planned for the AWS deployment.
 
 ## Tests
 
-`./mvnw test` runs integration tests against real PostgreSQL containers (Testcontainers). A scripted fake model stands in for Claude, so the full question flow is tested without an API key, at no cost, with the same result every run.
+`./mvnw test` runs integration tests against real PostgreSQL containers (Testcontainers). A scripted fake model stands in for Claude, so the full question flow is tested without an API key, at no cost, with the same result every run. Requests sign in with a mock JWT, so the tests don't need Cognito.
 
 ## Evals
 
 The tests above prove the code works; the eval measures whether Claude's **answers** are right. It asks AskDB 34 questions about the [Pagila](https://github.com/devrimgunduz/pagila) sample database (`src/test/resources/evals/pagila/cases.yaml`) and grades each answer two ways:
 
 - **answer_correct**: an LLM judge (Claude Sonnet 5.5) reads the question, a rubric, the reference query result and AskDB's answer, and decides pass or fail.
-- **sql_result_match**: a code check that the reference values appear in the rows of the last query AskDB ran. A diagnostic only: it fails correct answers whose last query was a different one.
+- **sql_result_match**: a code check that the reference values appear in the rows of the last query AskDB ran. This is not part of the pass fail criteria, but it helps debug wrong answers.
 
 Cases cover lookups, aggregation, joins, dates, ties in rankings, ambiguous questions, large results, questions the data can't answer, and requests to change data, which must be refused.
 
