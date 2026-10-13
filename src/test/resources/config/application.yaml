@@ -3,3 +3,12 @@ askdb:
   encryption:
     # A fixed, throwaway key so tests don't need ASKDB_ENCRYPTION_KEY. Never use it outside tests.
     key: AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=
+  cognito:
+    # Tests sign in with SignedInUserConfig's test JWTs, so Cognito itself is never contacted.
+    client-id: test-client
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://cognito-idp.us-east-1.amazonaws.com/us-east-1_test
